@@ -17,6 +17,8 @@ import argparse
 def parseList(root):
     with open(os.path.join(root, 'pairs.txt')) as f:
         pairs = f.read().splitlines()[1:]
+    
+    # ORG
     folder_name = 'lfw'
     nameLs = []
     nameRs = []
@@ -46,7 +48,8 @@ def parseList(root):
 def getAccuracy(scores, flags, threshold):
     p = np.sum(scores[flags == 1] > threshold)
     n = np.sum(scores[flags == -1] < threshold)
-    return 1.0 * (p + n) / len(scores)
+    accuracy = (p + n) * 1.0 / len(scores)
+    return accuracy
 
 
 def getThreshold(scores, flags, thrNum):
@@ -73,6 +76,12 @@ def evaluation_10_fold(root='./result/pytorch_result.mat'):
         testFold = fold == i
         flags = np.squeeze(flags)
 
+        if featureLs[valFold[0], :].shape[0] == 0:
+            continue
+        
+        if featureRs[valFold[0], :].shape[0] == 0:
+            continue
+        
         mu = np.mean(np.concatenate((featureLs[valFold[0], :], featureRs[valFold[0], :]), 0), 0)
         mu = np.expand_dims(mu, 0)
         featureLs = featureLs - mu
@@ -81,8 +90,15 @@ def evaluation_10_fold(root='./result/pytorch_result.mat'):
         featureRs = featureRs / np.expand_dims(np.sqrt(np.sum(np.power(featureRs, 2), 1)), 1)
 
         scores = np.sum(np.multiply(featureLs, featureRs), 1)
+        # if len(scores)==0 : 
+        #     continue;
+
         threshold = getThreshold(scores[valFold[0]], flags[valFold[0]], 10000)
+        # print('Fold', i, 'Threshold', threshold)
+        
         ACCs[i] = getAccuracy(scores[testFold[0]], flags[testFold[0]], threshold)
+        # print('Fold', i, 'Accuracy', ACCs[i])
+    
     #     print('{}    {:.2f}'.format(i+1, ACCs[i] * 100))
     # print('--------')
     # print('AVE    {:.2f}'.format(np.mean(ACCs) * 100))
@@ -91,35 +107,42 @@ def evaluation_10_fold(root='./result/pytorch_result.mat'):
 
 
 def getFeatureFromTorch(lfw_dir, feature_save_dir, resume=None, gpu=True):
-    net = model.MobileFacenet()
+    net = model.ShuffleFaceNet()
     if gpu:
         net = net.cuda()
     if resume:
-        ckpt = torch.load(resume)
+        ckpt = torch.load(resume, map_location='cpu')
         net.load_state_dict(ckpt['net_state_dict'])
     net.eval()
     nl, nr, flods, flags = parseList(lfw_dir)
     lfw_dataset = LFW(nl, nr)
+    # lfw_loader = torch.utils.data.DataLoader(lfw_dataset, batch_size=32,
+    #                                           shuffle=False, num_workers=8, drop_last=False)
+
     lfw_loader = torch.utils.data.DataLoader(lfw_dataset, batch_size=32,
-                                              shuffle=False, num_workers=8, drop_last=False)
+                                              shuffle=False, num_workers=2, drop_last=False)
 
     featureLs = None
     featureRs = None
     count = 0
 
+    print(lfw_loader.dataset.__len__())
     for data in lfw_loader:
         if gpu:
             for i in range(len(data)):
                 data[i] = data[i].cuda()
+        
         count += data[0].size(0)
         print('extracing deep features from the face pair {}...'.format(count))
-        res = [net(d).data.cpu().numpy()for d in data]
+        res = [net(d).data.cpu().numpy() for d in data]
         featureL = np.concatenate((res[0], res[1]), 1)
         featureR = np.concatenate((res[2], res[3]), 1)
+        
         if featureLs is None:
             featureLs = featureL
         else:
             featureLs = np.concatenate((featureLs, featureL), 0)
+        
         if featureRs is None:
             featureRs = featureR
         else:
@@ -129,8 +152,6 @@ def getFeatureFromTorch(lfw_dir, feature_save_dir, resume=None, gpu=True):
 
     result = {'fl': featureLs, 'fr': featureRs, 'fold': flods, 'flag': flags}
     scipy.io.savemat(feature_save_dir, result)
-
-
 
 
 # def getFeatureFromCaffe(gpu=True):
@@ -172,7 +193,7 @@ def getFeatureFromTorch(lfw_dir, feature_save_dir, resume=None, gpu=True):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Testing')
     parser.add_argument('--lfw_dir', type=str, default=LFW_DATA_DIR, help='The path of lfw data')
-    parser.add_argument('--resume', type=str, default='./model/best/068.ckpt',
+    parser.add_argument('--resume', type=str, default='./model/best/060.ckpt',
                         help='The path pf save model')
     parser.add_argument('--feature_save_dir', type=str, default='./result/best_result.mat',
                         help='The path of the extract features save, must be .mat file')
@@ -180,8 +201,9 @@ if __name__ == '__main__':
 
 
     # getFeatureFromCaffe()
-    getFeatureFromTorch(args.lfw_dir, args.feature_save_dir, args.resume)
+    getFeatureFromTorch(args.lfw_dir, args.feature_save_dir, args.resume, False)
     ACCs = evaluation_10_fold(args.feature_save_dir)
+    
     for i in range(len(ACCs)):
         print('{}    {:.2f}'.format(i+1, ACCs[i] * 100))
     print('--------')
