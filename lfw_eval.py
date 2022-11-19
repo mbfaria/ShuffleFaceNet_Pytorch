@@ -97,7 +97,7 @@ def evaluation_10_fold(root='./result/pytorch_result.mat'):
         # print('Fold', i, 'Threshold', threshold)
         
         ACCs[i] = getAccuracy(scores[testFold[0]], flags[testFold[0]], threshold)
-        print('Fold', i, 'Accuracy', ACCs[i])
+        # print('Fold', i, 'Accuracy', ACCs[i])
     
     #     print('{}    {:.2f}'.format(i+1, ACCs[i] * 100))
     # print('--------')
@@ -203,7 +203,8 @@ if __name__ == '__main__':
     # getFeatureFromCaffe()
     getFeatureFromTorch(args.lfw_dir, args.feature_save_dir, args.resume, False)
     ACCs = evaluation_10_fold(args.feature_save_dir)
-    # for i in range(len(ACCs)):
-    #     print('{}    {:.2f}'.format(i+1, ACCs[i] * 100))
-    # print('--------')
-    # print('AVE    {:.2f}'.format(np.mean(ACCs) * 100))
+    
+    for i in range(len(ACCs)):
+        print('{}    {:.2f}'.format(i+1, ACCs[i] * 100))
+    print('--------')
+    print('AVE    {:.2f}'.format(np.mean(ACCs) * 100))
